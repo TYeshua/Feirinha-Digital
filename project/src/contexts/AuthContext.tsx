@@ -1,200 +1,203 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-// Corrigido: Usando o caminho relativo correto
 import { supabase, UserProfile } from '../lib/supabase'; 
 import { Session, User } from '@supabase/supabase-js';
 
-// Define o tipo de "Role"
 export type AppRole = 'consumer' | 'seller' | 'supplier';
 
-// Define o que o contexto vai fornecer
 type AuthContextType = {
   user: User | null;
   profile: UserProfile | null;
   activeRole: AppRole;
   signIn: (email: string, pass: string) => Promise<any>;
-  // 1. Assinatura da função ATUALIZADA
   signUp: (
     email: string, 
     pass: string, 
     name: string, 
     role: AppRole, 
-    storeOrCompany: string
+    storeOrCompany: string,
+    documentNumber: string
   ) => Promise<any>;
   signOut: () => Promise<any>;
   setActiveRole: (role: AppRole) => void;
   loading: boolean;
 };
 
-// Cria o contexto
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Define o Provedor do contexto
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [activeRole, setActiveRole] = useState<AppRole>('consumer');
   const [loading, setLoading] = useState(true);
 
-  // Escuta mudanças na autenticação do Supabase
   useEffect(() => {
-    // ... (Sem alterações aqui) ...
-    const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        setUser(session.user);
-        await fetchProfile(session.user);
+    let mounted = true;
+    console.log("[Auth] Iniciando AuthProvider...");
+
+    // Timeout de segurança para destravar a tela se algo demorar muito
+    const safetyTimeout = setTimeout(() => {
+      if (loading && mounted) {
+        console.warn("[Auth] Timeout de segurança. Forçando fim do loading.");
+        setLoading(false);
       }
-      setLoading(false);
-    };
-    getInitialSession();
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setLoading(true);
-        if (event === 'SIGNED_IN' && session) {
+    }, 4000);
+
+    const initializeAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session && mounted) {
           setUser(session.user);
           await fetchProfile(session.user);
+        }
+      } catch (error) {
+        console.error("[Auth] Erro na inicialização:", error);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+          clearTimeout(safetyTimeout);
+        }
+      }
+    };
+
+    initializeAuth();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log(`[Auth] Evento: ${event}`);
+        if (event === 'SIGNED_IN' && session) {
+          setUser(session.user);
+          await fetchProfile(session.user); // Busca ou cria o perfil
+          setLoading(false); // Garante que o loading pare
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
           setProfile(null);
           setActiveRole('consumer');
+          setLoading(false);
         }
-        setLoading(false);
       }
     );
+
     return () => {
+      mounted = false;
+      clearTimeout(safetyTimeout);
       authListener.subscription.unsubscribe();
     };
   }, []);
 
-  // Busca o perfil do usuário no banco de dados
-  const fetchProfile = async (user: User) => {
-    // ... (Sem alterações aqui) ...
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+  // --- FUNÇÃO DE BUSCA COM AUTO-CORREÇÃO ---
+  const fetchProfile = async (currentUser: User) => {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', currentUser.id)
+        .maybeSingle();
 
-    if (data) {
-      setProfile(data as UserProfile);
-      // Define o perfil ativo inicial com base no que está no BD
-      if (data.is_seller) setActiveRole('seller');
-      else if (data.is_supplier) setActiveRole('supplier');
-      else setActiveRole('consumer');
-    } else if (error) {
-      console.error('Erro ao buscar perfil:', error.message);
+      if (data) {
+        console.log("[Auth] Perfil carregado:", data.full_name);
+        setProfile(data as UserProfile);
+        
+        // Define o perfil ativo
+        if (data.is_seller) setActiveRole('seller');
+        else if (data.is_supplier) setActiveRole('supplier');
+        else setActiveRole('consumer');
+      } else {
+        // === AUTO-CORREÇÃO ===
+        // Se o usuário existe no Auth mas não tem perfil (devido a erro anterior),
+        // criamos o perfil básico agora para destravar o login.
+        console.warn("[Auth] Perfil não encontrado. Tentando criar automaticamente (Auto-fix)...");
+        
+        const { error: insertError } = await supabase.from('user_profiles').insert({
+          id: currentUser.id,
+          full_name: currentUser.user_metadata?.full_name || 'Usuário',
+          is_consumer: true
+        });
+
+        if (!insertError) {
+           console.log("[Auth] Perfil criado com sucesso! Recarregando...");
+           // Chama a função novamente para carregar o perfil recém-criado
+           return fetchProfile(currentUser); 
+        } else {
+           console.error("[Auth] Falha na auto-correção:", insertError);
+           // Se falhar mesmo tentando criar, aí sim deslogamos
+           await signOut();
+        }
+      }
+    } catch (err) {
+      console.error("[Auth] Erro crítico em fetchProfile:", err);
+      setLoading(false);
     }
   };
 
-  // Função de Login
   const signIn = async (email: string, pass: string) => {
-    // ... (Sem alterações aqui) ...
     const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if (error) throw error;
   };
 
-  // --- 2. Função de Cadastro ATUALIZADA ---
   const signUp = async (
-    email: string, 
-    pass: string, 
-    name: string, 
-    role: AppRole, 
-    storeOrCompany: string
+    email: string, pass: string, name: string, role: AppRole, storeOrCompany: string, documentNumber: string
   ) => {
-    
-    // Primeiro, cadastra o usuário no 'auth.users'
-    // A trigger 'handle_new_user' ainda vai criar o perfil básico
     const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password: pass,
-      options: {
-        data: {
-          full_name: name, // A trigger usa isso
-        },
-      },
+      email, 
+      password: pass, 
+      options: { data: { full_name: name } },
     });
 
     if (authError) throw authError;
-    if (!authData.user) throw new Error("Cadastro falhou, usuário não retornado.");
 
-    // O usuário foi criado. Agora, atualizamos o perfil dele
-    // com base na 'role' selecionada.
-    const userId = authData.user.id;
+    // Se pede confirmação de email, paramos aqui para não dar erro 401
+    if (authData.user && !authData.session) {
+      alert("Cadastro iniciado! Verifique seu e-mail para confirmar a conta.");
+      return;
+    }
+
+    const userId = authData.user!.id;
+
+    // Tenta criar/atualizar perfis (Upsert)
+    await supabase.from('user_profiles').upsert({
+      id: userId,
+      full_name: name,
+      is_consumer: role === 'consumer' || true,
+      is_seller: role === 'seller',
+      is_supplier: role === 'supplier',
+    });
 
     if (role === 'seller') {
-      // 1. Atualiza o user_profiles
-      const { error: profileError } = await supabase
-        .from('user_profiles')
-        .update({ is_seller: true, is_consumer: false }) // Desativa 'consumer' como padrão
-        .eq('id', userId);
-      
-      if (profileError) throw profileError;
-
-      // 2. Cria o seller_profiles
-      const { error: sellerError } = await supabase
-        .from('seller_profiles')
-        .insert({
-          user_id: userId,
-          store_name: storeOrCompany,
-          // Você pode adicionar valores padrão aqui se quiser
-        });
-      
-      if (sellerError) throw sellerError;
-
+      await supabase.from('seller_profiles').upsert({ 
+          user_id: userId, store_name: storeOrCompany, document_number: documentNumber 
+      }, { onConflict: 'user_id' });
     } else if (role === 'supplier') {
-      // 1. Atualiza o user_profiles
-      const { error: profileError } = await supabase
-        .from('user_profiles')
-        .update({ is_supplier: true, is_consumer: false }) // Desativa 'consumer'
-        .eq('id', userId);
-      
-      if (profileError) throw profileError;
-
-      // 2. Cria o supplier_profiles
-      const { error: supplierError } = await supabase
-        .from('supplier_profiles')
-        .insert({
-          user_id: userId,
-          company_name: storeOrCompany,
-        });
-
-      if (supplierError) throw supplierError;
+      await supabase.from('supplier_profiles').upsert({ 
+          user_id: userId, company_name: storeOrCompany, document_number: documentNumber 
+      }, { onConflict: 'user_id' });
     }
-    // Se a role for 'consumer', não fazemos nada extra,
-    // pois a trigger já o criou como 'is_consumer: true'
+
+    await fetchProfile(authData.user!);
   };
 
-  // Função de Logout
   const signOut = async () => {
-    // ... (Sem alterações aqui) ...
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    setUser(null);
+    setProfile(null);
+    setLoading(false);
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Erro no signOut:", error);
+    }
   };
 
-  // Junta tudo para passar ao provider
-  const value = {
-    user,
-    profile,
-    activeRole,
-    signIn,
-    signUp,
-    signOut,
-    setActiveRole,
-    loading,
-  };
+  const value = { user, profile, activeRole, signIn, signUp, signOut, setActiveRole, loading };
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 }
 
-// Hook customizado
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
-  }
+  if (context === undefined) throw new Error('useAuth error');
   return context;
 };

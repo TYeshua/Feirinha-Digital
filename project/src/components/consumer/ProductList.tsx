@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Search, MapPin, ShoppingCart, Star, X, Plus, Minus } from 'lucide-react';
+import { Search, MapPin, ShoppingCart, X, Plus, Minus } from 'lucide-react';
 // Caminhos de importação corrigidos (usando relativo)
-import { supabase, Product } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase';
 // 1. Importa os tipos globais (caminho corrigido)
-import { ProductWithSeller, CartItem } from '../../lib/types';
+import { ProductWithSeller } from '../../lib/types';
 // 2. Importa o "cérebro" da sacola (caminho corrigido)
 import { useCart } from '../../contexts/CartContext';
 
@@ -24,36 +24,40 @@ export default function ProductList() {
 
   const loadProducts = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('products')
-      .select(`
-        *,
-        seller_profiles (
-          store_name,
-          latitude,
-          longitude
-        )
-      `)
-      .eq('is_active', true);
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select(`
+          *,
+          seller_profiles (
+            store_name,
+            latitude,
+            longitude
+          )
+        `)
+        .eq('is_active', true);
 
-    if (data) {
-      setProducts(data as ProductWithSeller[]);
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        setProducts(data as ProductWithSeller[]);
+      }
+    } catch (error: any) {
+      console.error("Erro ao carregar produtos:", error.message || error);
+      // Não damos throw aqui para não travar a tela inteira
+    } finally {
+      setLoading(false);
     }
-    if(error) {
-      console.error("Erro ao carregar produtos:", error.message)
-    }
-    setLoading(false);
   };
 
-  // 4. NÃO PRECISAMOS MAIS DA FUNÇÃO addToCart local. Ela foi removida.
-
-  const filteredProducts = products.filter(product => {
+  // PROTEÇÃO CONTRA CRASH (v7): Adicionado (products || []) para garantir que é um array antes de filtrar
+  const filteredProducts = (products || []).filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
-
-  // 5. NÃO PRECISAMOS MAIS dos cálculos cartTotal e cartItemCount. Eles foram removidos.
 
   return (
     <div className="max-w-7xl mx-auto p-6">
@@ -114,7 +118,8 @@ export default function ProductList() {
 
                 <div className="flex items-center gap-1 text-sm text-gray-600 mb-2">
                   <MapPin className="w-4 h-4" />
-                  <span>{product.seller_profiles.store_name}</span>
+                  {/* PROTEÇÃO CONTRA CRASH (v7): Optional Chaining (?.) para evitar erro se o vendedor não existir */}
+                  <span>{product.seller_profiles?.store_name || 'Vendedor não identificado'}</span>
                 </div>
 
                 {product.description && (
@@ -137,7 +142,7 @@ export default function ProductList() {
                 </div>
 
                 <button
-                  onClick={() => addToCart(product, 1)} // 6. Usa a função addToCart global
+                  onClick={() => addToCart(product, 1)} 
                   disabled={product.stock_quantity <= 0}
                   className="w-full bg-green-600 text-white py-2 rounded-lg font-medium hover:bg-green-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
@@ -151,9 +156,9 @@ export default function ProductList() {
       )}
 
       {/* --- Sacola Flutuante --- */}
-      {/* 7. Esta UI agora lê do 'cart' e 'cartTotal' globais */}
+      {/* Adicionado z-50 para garantir que fique visível */}
       {cart.length > 0 && (
-        <div className="fixed bottom-6 right-6 bg-white rounded-xl shadow-2xl p-6 w-80 max-h-[70vh] flex flex-col">
+        <div className="fixed bottom-6 right-6 bg-white rounded-xl shadow-2xl p-6 w-80 max-h-[70vh] flex flex-col z-50">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-lg">Sacola</h3>
             <div className="bg-green-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">

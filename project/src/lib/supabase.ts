@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
 // 1. Tipos de dados (Extraídos do seu schema.sql)
-// Isso resolve todos os erros de "tipo"
 export type UserProfile = {
   id: string;
   full_name: string;
@@ -65,14 +64,26 @@ export type Review = {
   comment: string | null;
 };
 
-// 2. Leitura das chaves do .env
-// (O arquivo que está aberto na sua tela, .env)
+// 2. Diagnóstico de Conexão e Leitura de Chaves
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// Log para verificar se as variáveis estão carregando (sem mostrar a chave inteira por segurança)
+console.log("[Supabase] Inicializando cliente...");
+console.log("[Supabase] URL:", supabaseUrl ? supabaseUrl : "NÃO DEFINIDA (Vazia)");
+console.log("[Supabase] Key:", supabaseAnonKey ? "Presente (Oculta)" : "NÃO DEFINIDA (Vazia)");
+
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error("VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY devem ser definidos no .env");
+  console.error("ERRO CRÍTICO: VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY estão faltando no arquivo .env");
 }
 
 // 3. Criação e exportação do cliente Supabase
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Usamos '' como fallback para que o createClient não falhe na inicialização do app,
+// permitindo que a UI mostre erros em vez de travar numa tela branca.
+export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+  auth: {
+    persistSession: true,     // Garante que a sessão seja salva no LocalStorage
+    autoRefreshToken: true,   // Tenta renovar o token automaticamente
+    detectSessionInUrl: true, // Importante para links de confirmação de email
+  },
+});

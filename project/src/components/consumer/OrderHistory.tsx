@@ -31,28 +31,34 @@ export default function OrderHistory() {
     if (!user) return;
     setLoading(true);
 
-    // Busca pedidos onde o 'customer_id' é o meu
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        *,
-        seller_profiles ( store_name ),
-        order_items (
-          quantity,
-          price_at_purchase,
-          products ( name )
-        )
-      `)
-      .eq('customer_id', user.id) // A mudança é aqui!
-      .order('created_at', { ascending: false });
+    try {
+      // Busca pedidos onde o 'customer_id' é o meu
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          seller_profiles ( store_name ),
+          order_items (
+            quantity,
+            price_at_purchase,
+            products ( name )
+          )
+        `)
+        .eq('customer_id', user.id) // A mudança é aqui!
+        .order('created_at', { ascending: false });
 
-    if (data) {
-      setOrders(data as any);
+      if (error) throw error;
+
+      if (data) {
+        setOrders(data as any);
+      } else {
+        setOrders([]); // Garante array vazio
+      }
+    } catch (error: any) {
+      console.error("Erro ao carregar histórico de pedidos:", error.message || error);
+    } finally {
+      setLoading(false);
     }
-    if (error) {
-      console.error("Erro ao carregar histórico de pedidos:", error.message);
-    }
-    setLoading(false);
   };
 
   return (
@@ -75,7 +81,9 @@ export default function OrderHistory() {
                 <div>
                   <h3 className="font-bold text-lg text-gray-900">Pedido #{order.id.substring(0, 8)}...</h3>
                   <p className="text-sm text-gray-600 flex items-center gap-2">
-                    <User className="w-4 h-4" /> Vendedor: {order.seller_profiles.store_name}
+                    <User className="w-4 h-4" /> 
+                    {/* PROTEÇÃO (v7): Optional Chaining para evitar crash se vendedor não existir */}
+                    Vendedor: {order.seller_profiles?.store_name || 'Vendedor desconhecido'}
                   </p>
                   <p className="text-sm text-gray-600 flex items-center gap-2">
                     <Clock className="w-4 h-4" /> Data: {new Date(order.created_at).toLocaleString('pt-BR')}
@@ -97,16 +105,15 @@ export default function OrderHistory() {
               <div className="p-4">
                 <h4 className="font-semibold mb-2">Itens:</h4>
                 <ul className="list-disc pl-5 space-y-1">
-                  {order.order_items.map((item: any) => (
-                    <li key={item.products.name} className="text-sm text-gray-700">
-                      {item.quantity}x {item.products.name}
+                  {order.order_items.map((item: any, index: number) => (
+                    <li key={index} className="text-sm text-gray-700">
+                      {item.quantity}x {item.products?.name || 'Produto indisponível'}
                       <span className="text-gray-500"> (R$ {item.price_at_purchase.toFixed(2)} cada)</span>
                     </li>
                   ))}
                 </ul>
                 
                 {/* 5.A. Botão de Avaliação (placeholder) */}
-                {/* No próximo passo, faremos este botão funcionar */}
                 {order.status === 'Concluído' && (
                   <div className="mt-4">
                     <button className="flex items-center gap-2 px-4 py-2 bg-yellow-500 text-white rounded-lg font-medium hover:bg-yellow-600 transition-colors">
