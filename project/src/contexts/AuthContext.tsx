@@ -14,11 +14,12 @@ type AuthContextType = {
   signIn: (email: string, pass: string) => Promise<any>;
   // 1. Assinatura da função ATUALIZADA
   signUp: (
-    email: string, 
-    pass: string, 
-    name: string, 
-    role: AppRole, 
-    storeOrCompany: string
+    email: string,
+    pass: string,
+    name: string,
+    role: AppRole,
+    storeOrCompany: string,
+    documentNumber: string
   ) => Promise<any>;
   signOut: () => Promise<any>;
   setActiveRole: (role: AppRole) => void;
@@ -95,11 +96,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // --- 2. Função de Cadastro ATUALIZADA ---
   const signUp = async (
-    email: string, 
-    pass: string, 
-    name: string, 
-    role: AppRole, 
-    storeOrCompany: string
+    email: string,
+    pass: string,
+    name: string,
+    role: AppRole,
+    storeOrCompany: string,
+    documentNumber: string
   ) => {
     
     // Primeiro, cadastra o usuário no 'auth.users'
