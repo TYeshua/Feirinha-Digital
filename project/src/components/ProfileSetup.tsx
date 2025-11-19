@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Store, Package } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from 'sonner'; // Usando toasts bonitos
 
 export default function ProfileSetup() {
   const { user, profile } = useAuth();
@@ -21,34 +22,71 @@ export default function ProfileSetup() {
     if (!user) return;
     setLoading(true);
 
-    await supabase.from('user_profiles').update({ is_seller: true }).eq('id', user.id);
+    try {
+      // 1. Atualiza flag no perfil principal
+      const { error: userError } = await supabase
+        .from('user_profiles')
+        .update({ is_seller: true })
+        .eq('id', user.id);
 
-    await supabase.from('seller_profiles').insert({
-      user_id: user.id,
-      store_name: sellerData.store_name,
-      description: sellerData.description,
-      delivery_radius_km: parseInt(sellerData.delivery_radius_km),
-      delivery_fee_per_km: parseFloat(sellerData.delivery_fee_per_km),
-    });
+      if (userError) throw userError;
 
-    setLoading(false);
-    window.location.reload();
+      // 2. Cria/Atualiza perfil de vendedor (UPSERT em vez de INSERT)
+      const { error: sellerError } = await supabase
+        .from('seller_profiles')
+        .upsert({
+          user_id: user.id,
+          store_name: sellerData.store_name,
+          description: sellerData.description,
+          delivery_radius_km: parseInt(sellerData.delivery_radius_km),
+          delivery_fee_per_km: parseFloat(sellerData.delivery_fee_per_km),
+          is_active: true
+        }, { onConflict: 'user_id' }); // Se já existir, atualiza
+
+      if (sellerError) throw sellerError;
+
+      toast.success("Perfil de Vendedor ativado!");
+      // Pequeno delay para o toast aparecer antes do reload
+      setTimeout(() => window.location.reload(), 1000);
+
+    } catch (error: any) {
+      console.error(error);
+      toast.error("Erro ao ativar: " + error.message);
+      setLoading(false);
+    }
   };
 
   const enableSupplier = async () => {
     if (!user) return;
     setLoading(true);
 
-    await supabase.from('user_profiles').update({ is_supplier: true }).eq('id', user.id);
+    try {
+      const { error: userError } = await supabase
+        .from('user_profiles')
+        .update({ is_supplier: true })
+        .eq('id', user.id);
 
-    await supabase.from('supplier_profiles').insert({
-      user_id: user.id,
-      company_name: supplierData.company_name,
-      description: supplierData.description,
-    });
+      if (userError) throw userError;
 
-    setLoading(false);
-    window.location.reload();
+      const { error: supplierError } = await supabase
+        .from('supplier_profiles')
+        .upsert({
+          user_id: user.id,
+          company_name: supplierData.company_name,
+          description: supplierData.description,
+          is_active: true
+        }, { onConflict: 'user_id' });
+
+      if (supplierError) throw supplierError;
+
+      toast.success("Perfil de Fornecedor ativado!");
+      setTimeout(() => window.location.reload(), 1000);
+
+    } catch (error: any) {
+      console.error(error);
+      toast.error("Erro ao ativar: " + error.message);
+      setLoading(false);
+    }
   };
 
   return (
@@ -60,7 +98,7 @@ export default function ProfileSetup() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {!profile?.is_seller && (
-          <div className="bg-white rounded-xl shadow-md p-6">
+          <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
                 <Store className="w-6 h-6 text-green-600" />
@@ -130,13 +168,13 @@ export default function ProfileSetup() {
               disabled={loading || !sellerData.store_name}
               className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              Ativar Perfil de Vendedor
+              {loading ? 'Processando...' : 'Ativar Perfil de Vendedor'}
             </button>
           </div>
         )}
 
         {!profile?.is_supplier && (
-          <div className="bg-white rounded-xl shadow-md p-6">
+          <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
                 <Package className="w-6 h-6 text-amber-600" />
@@ -180,15 +218,16 @@ export default function ProfileSetup() {
               disabled={loading || !supplierData.company_name}
               className="w-full bg-amber-600 text-white py-3 rounded-lg font-semibold hover:bg-amber-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              Ativar Perfil de Fornecedor
+              {loading ? 'Processando...' : 'Ativar Perfil de Fornecedor'}
             </button>
           </div>
         )}
       </div>
 
       {profile?.is_seller && profile?.is_supplier && (
-        <div className="mt-6 text-center">
-          <p className="text-gray-600">Você já tem todos os perfis ativos!</p>
+        <div className="mt-12 text-center p-8 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">Você é um Super Usuário!</h3>
+          <p className="text-gray-500">Todos os perfis já estão ativos na sua conta.</p>
         </div>
       )}
     </div>

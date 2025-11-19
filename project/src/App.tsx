@@ -6,12 +6,13 @@ import ConsumerDashboard from './components/consumer/ConsumerDashboard';
 import SellerDashboard from './components/seller/SellerDashboard';
 import SupplierDashboard from './components/supplier/SupplierDashboard';
 import ProfileSetup from './components/ProfileSetup';
-import { LogOut, RefreshCw, UserPlus } from 'lucide-react'; // Importando ícones novos
+import { LogOut, RefreshCw, UserPlus } from 'lucide-react';
+// 1. Importe o Toaster
+import { Toaster } from 'sonner';
 
 function AppContent() {
   const { user, profile, activeRole, loading, signOut } = useAuth();
 
-  // 1. Carregamento Inicial (Spinner Verde)
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -20,12 +21,10 @@ function AppContent() {
     );
   }
 
-  // 2. Não logado -> Tela de Login
   if (!user) {
     return <Auth />;
   }
 
-  // 3. CORREÇÃO DO LOOP: Logado mas sem Perfil (Erro de Conexão ou Cadastro Incompleto)
   if (!profile) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
@@ -40,7 +39,6 @@ function AppContent() {
           </p>
 
           <div className="flex flex-col gap-3">
-            {/* Botão para recarregar a página (Tentar de novo) */}
             <button 
               onClick={() => window.location.reload()}
               className="flex items-center justify-center gap-2 w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
@@ -49,7 +47,6 @@ function AppContent() {
               Tentar Carregar Novamente
             </button>
 
-            {/* Botão de Sair (Emergência) */}
             <button 
               onClick={signOut}
               className="flex items-center justify-center gap-2 w-full bg-gray-100 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
@@ -63,7 +60,6 @@ function AppContent() {
     );
   }
 
-  // 4. Verificação de Permissões (Fluxo normal)
   const hasRequiredProfile =
     (activeRole === 'consumer' && profile.is_consumer) ||
     (activeRole === 'seller' && profile.is_seller) ||
@@ -77,7 +73,6 @@ function AppContent() {
     );
   }
 
-  // 5. Painéis Principais
   return (
     <Layout>
       {activeRole === 'consumer' && <ConsumerDashboard />}
@@ -92,6 +87,8 @@ function App() {
     <AuthProvider>
       <CartProvider>
         <AppContent />
+        {/* 2. Adicione o componente aqui */}
+        <Toaster position="top-right" richColors closeButton />
       </CartProvider>
     </AuthProvider>
   );
